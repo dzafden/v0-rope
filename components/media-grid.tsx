@@ -26,25 +26,15 @@ export default function MediaGrid({
     return <>{emptyContent}</>
   }
 
-  // Create a map to deduplicate items by ID
-  const uniqueItems = items.reduce((acc, item, index) => {
-    // Use the index as part of the key to ensure uniqueness
-    const uniqueKey = `${item.id}-${index}`
-    acc.set(uniqueKey, { item, index })
-    return acc
-  }, new Map())
-
-  const uniqueItemsArray = Array.from(uniqueItems.values())
-
   if (layout === "flex") {
     // Horizontal scrolling layout
     return (
       <div className={cn("flex overflow-x-auto pb-4 -mx-4 px-4 scrollbar-hide no-scrollbar", className)}>
         <div className="flex gap-4">
           <AnimatePresence>
-            {uniqueItemsArray.map(({ item, index }) => (
+            {items.map((item, index) => (
               <motion.div
-                key={`${item.id}-${index}`}
+                key={item.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.8 }}
@@ -62,11 +52,11 @@ export default function MediaGrid({
 
   // Grid layout - using flex-based approach to maintain card aspect ratio
   return (
-    <div className={cn("flex flex-wrap justify-between gap-4", className)}>
+    <div className={cn("grid", gridClass, className)}>
       <AnimatePresence>
-        {uniqueItemsArray.map(({ item, index }) => (
+        {items.map((item, index) => (
           <motion.div
-            key={`${item.id}-${index}`}
+            key={item.id}
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.8 }}
@@ -76,7 +66,7 @@ export default function MediaGrid({
               damping: 25,
               delay: 0.03 * Math.min(index, 15),
             }}
-            className="flex"
+            className="flex justify-center"
           >
             {renderItem(item, index)}
           </motion.div>

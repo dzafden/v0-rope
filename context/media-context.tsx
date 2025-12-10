@@ -1,11 +1,9 @@
 "use client"
 
-import type React from "react"
-
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode, useRef } from "react"
 import { type MediaItem, fetchTrending, fetchPopularMovies, fetchPopularTVShows, searchMedia } from "@/lib/tmdb-api"
 import { searchBooks, fetchPopularBooks } from "@/lib/openlibrary-api"
-import storage, { cleanupOrphanedData } from "@/lib/storage"
+import storage from "@/lib/storage"
 
 // -------------------- Types and Constants --------------------
 export interface Tag {
@@ -27,9 +25,6 @@ export interface MediaContextType {
   popularBooks: MediaItem[]
   collection: MediaItem[]
   searchResults: MediaItem[]
-  orderedFavorites: MediaItem[]
-  orderedWatching: MediaItem[]
-  orderedReading: MediaItem[]
 
   // Loading states
   isLoading: boolean
@@ -77,10 +72,6 @@ export interface MediaContextType {
 
   // New flag to indicate if data has been loaded
   isInitialDataLoaded: boolean
-
-  // List management functions
-  toggleSelection: (item: MediaItem, section: string) => void
-  removeItem: (id: string, section: string, e: React.MouseEvent) => void
 }
 
 // Local storage keys
@@ -90,9 +81,6 @@ const STORAGE_KEYS = {
   hiddenItems: "mediaHiddenItems",
   tags: "mediaTags",
   itemTags: "mediaItemTags",
-  favorites: "mediaFavorites",
-  watching: "mediaWatching",
-  reading: "mediaReading",
 }
 
 const DEFAULT_TAGS: Tag[] = [
@@ -113,14 +101,6 @@ export function MediaProvider({ children }: { children: ReactNode }) {
   const [popularBooks, setPopularBooks] = useState<MediaItem[]>([])
   const [collection, setCollection] = useState<MediaItem[]>([])
   const [searchResults, setSearchResults] = useState<MediaItem[]>([])
-  const [orderedFavorites, setOrderedFavorites] = useState<MediaItem[]>([])
-  const [orderedWatching, setOrderedWatching] = useState<MediaItem[]>([])
-  const [orderedReading, setOrderedReading] = useState<MediaItem[]>([])
-
-  // List selection states
-  const [selectedFavorites, setSelectedFavorites] = useState<string[]>([])
-  const [selectedWatching, setSelectedWatching] = useState<string[]>([])
-  const [selectedReading, setSelectedReading] = useState<string[]>([])
 
   // Granular Loading States
   const [isTrendingLoading, setIsTrendingLoading] = useState(true)
@@ -225,115 +205,6 @@ export function MediaProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
-  // Add a new useEffect for migrating list storage format
-  useEffect(() => {
-    // Migration function to convert lists from full objects to ID-only arrays
-    const migrateListStorage = () => {
-      console.log("Starting list storage migration check...")
-
-      // Helper function to migrate a specific list
-      const migrateList = (key: string) => {
-        try {
-          const list = storage.get(key, [])
-
-          // Check if the list needs migration (contains objects with id property)
-          if (Array.isArray(list) && list.length > 0 && typeof list[0] === "object" && list[0]?.id) {
-            console.log(`Migrating ${key} from object array to ID-only array...`)
-
-            // Extract IDs from objects, filtering out any invalid entries
-            const idList = list.map((item) => item?.id).filter((id) => typeof id === "string")
-
-            // Save the ID-only list back to storage
-            storage.set(key, idList)
-            console.log(`Successfully migrated ${key}: ${idList.length} items`)
-            return true
-          } else {
-            console.log(`No migration needed for ${key}, already in correct format or empty`)
-            return false
-          }
-        } catch (error) {
-          console.error(`Error migrating ${key}:`, error)
-          return false
-        }
-      }
-
-      // Migrate each list
-      migrateList(STORAGE_KEYS.favorites)
-      migrateList(STORAGE_KEYS.watching)
-      migrateList(STORAGE_KEYS.reading)
-
-      console.log("List storage migration check completed")
-    }
-
-    // Run migration once on component mount
-    migrateListStorage()
-  }, []) // Empty dependency array ensures this runs only once
-
-  // Update the useEffect that loads favorites, watching, and reading lists
-  // Replace the existing useEffect with this updated version
-  useEffect(() => {
-    // Try to load favorites from localStorage
-    try {
-      const savedFavoriteIds = storage.get<string[]>(STORAGE_KEYS.favorites, [])
-      if (savedFavoriteIds.length > 0) {
-        // Map IDs to full MediaItem objects from collection
-        const favoriteItems = savedFavoriteIds
-          .map((id) => collection.find((item) => item.id === id))
-          .filter(Boolean) as MediaItem[] // Filter out undefined items (IDs not in collection)
-
-        setOrderedFavorites(favoriteItems)
-        setSelectedFavorites(savedFavoriteIds)
-      } else {
-        setOrderedFavorites([])
-      }
-    } catch (e) {
-      console.error("Error loading favorites from localStorage:", e)
-      setOrderedFavorites([])
-    }
-
-    // Try to load watching from localStorage
-    try {
-      const savedWatchingIds = storage.get<string[]>(STORAGE_KEYS.watching, [])
-      if (savedWatchingIds.length > 0) {
-        // Map IDs to full MediaItem objects from collection
-        const watchingItems = savedWatchingIds
-          .map((id) => collection.find((item) => item.id === id))
-          .filter(Boolean) as MediaItem[] // Filter out undefined items
-
-        setOrderedWatching(watchingItems)
-        setSelectedWatching(savedWatchingIds)
-      } else {
-        setOrderedWatching([])
-        setSelectedWatching([])
-      }
-    } catch (e) {
-      console.error("Error loading watching from localStorage:", e)
-      setOrderedWatching([])
-      setSelectedWatching([])
-    }
-
-    // Try to load reading from localStorage
-    try {
-      const savedReadingIds = storage.get<string[]>(STORAGE_KEYS.reading, [])
-      if (savedReadingIds.length > 0) {
-        // Map IDs to full MediaItem objects from collection
-        const readingItems = savedReadingIds
-          .map((id) => collection.find((item) => item.id === id))
-          .filter(Boolean) as MediaItem[] // Filter out undefined items
-
-        setOrderedReading(readingItems)
-        setSelectedReading(savedReadingIds)
-      } else {
-        setOrderedReading([])
-        setSelectedReading([])
-      }
-    } catch (e) {
-      console.error("Error loading reading from localStorage:", e)
-      setOrderedReading([])
-      setSelectedReading([])
-    }
-  }, [collection]) // Depend on collection to update lists when collection changes
-
   // Add this useEffect to update isInitialDataLoaded whenever any data is available
   useEffect(() => {
     if (trending.length > 0 || popularMovies.length > 0 || popularTVShows.length > 0 || popularBooks.length > 0) {
@@ -342,29 +213,6 @@ export function MediaProvider({ children }: { children: ReactNode }) {
   }, [trending, popularMovies, popularTVShows, popularBooks])
 
   // ------------------ Local Storage Sync ------------------
-  // Update the useEffect hooks that save changes to localStorage
-  // Replace the existing useEffects with these updated versions
-  useEffect(() => {
-    // Save favorites to localStorage whenever they change
-    if (selectedFavorites) {
-      storage.set(STORAGE_KEYS.favorites, selectedFavorites)
-    }
-  }, [selectedFavorites])
-
-  useEffect(() => {
-    // Save watching to localStorage whenever they change
-    if (selectedWatching) {
-      storage.set(STORAGE_KEYS.watching, selectedWatching)
-    }
-  }, [selectedWatching])
-
-  useEffect(() => {
-    // Save reading to localStorage whenever they change
-    if (selectedReading) {
-      storage.set(STORAGE_KEYS.reading, selectedReading)
-    }
-  }, [selectedReading])
-
   useEffect(() => {
     storage.set(STORAGE_KEYS.collection, collection)
   }, [collection])
@@ -429,7 +277,6 @@ export function MediaProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Add deduplication to the data loading functions
   const loadMoreTrending = useCallback(async () => {
     if (isTrendingLoading || !hasMore) return
     setIsTrendingLoading(true)
@@ -443,21 +290,7 @@ export function MediaProvider({ children }: { children: ReactNode }) {
       if (moreTrending.length === 0) {
         setHasMore(false)
       } else {
-        // Deduplicate before adding to the state
-        const existingIds = new Set(trending.map((item) => item.id))
-        const uniqueNewItems = moreTrending.filter((item) => !existingIds.has(item.id))
-
-        console.log(`Loaded ${moreTrending.length} trending items, ${uniqueNewItems.length} are unique`)
-
-        if (uniqueNewItems.length === 0) {
-          console.log("No unique items found, trying next page")
-          setCurrentPage(nextPage)
-          // Try loading the next page immediately if all items were duplicates
-          setTimeout(() => loadMoreTrending(), 100)
-          return
-        }
-
-        setTrending((prev) => [...prev, ...uniqueNewItems])
+        setTrending((prev) => [...prev, ...moreTrending])
         setCurrentPage(nextPage)
       }
     } catch (error) {
@@ -466,7 +299,7 @@ export function MediaProvider({ children }: { children: ReactNode }) {
       setIsTrendingLoading(false)
       setIsLoading(false)
     }
-  }, [isTrendingLoading, hasMore, currentPage, trending])
+  }, [isTrendingLoading, hasMore, currentPage])
 
   const loadMoreMovies = useCallback(async () => {
     if (isLoadingMovies || !hasMoreMovies) return Promise.resolve()
@@ -633,28 +466,9 @@ export function MediaProvider({ children }: { children: ReactNode }) {
     [collection],
   )
 
-  const removeFromCollection = useCallback(
-    (id: string) => {
-      // Store the ID before removal
-      const mediaId = id
-
-      // Update state
-      setCollection((prev) => prev.filter((item) => item.id !== mediaId))
-
-      try {
-        // Update localStorage
-        const updatedCollection = collection.filter((item) => item.id !== mediaId)
-        storage.set("mediaCollection", updatedCollection)
-
-        // Clean up orphaned data after successful deletion
-        cleanupOrphanedData(mediaId)
-      } catch (err) {
-        console.error(`Failed to remove item ${mediaId} from collection:`, err)
-        // Consider showing a user-facing error message here if critical
-      }
-    },
-    [collection],
-  )
+  const removeFromCollection = useCallback((id: string) => {
+    setCollection((prev) => prev.filter((item) => item.id !== id))
+  }, [])
 
   const updateMediaCustomization = useCallback((id: string, customizations: any, updatedMedia?: MediaItem) => {
     setCollection((prev) =>
@@ -787,85 +601,6 @@ export function MediaProvider({ children }: { children: ReactNode }) {
     [collection],
   )
 
-  // Update the toggleSelection function to work with IDs instead of full objects
-  // Replace the existing toggleSelection function with this updated version
-  const toggleSelection = (item, section) => {
-    // If not in collection, add it
-    if (!item.isInCollection) {
-      addToCollection(item)
-      item.isInCollection = true
-    }
-
-    // Handle selection based on section
-    switch (section) {
-      case "favorites":
-        setSelectedFavorites((prev) => {
-          if (prev.includes(item.id)) {
-            // Remove from favorites
-            setOrderedFavorites((current) => current.filter((fav) => fav.id !== item.id))
-            return prev.filter((id) => id !== item.id)
-          } else {
-            // Add to favorites (if under limit)
-            if (prev.length >= 5) return prev
-            setOrderedFavorites((current) => [...current, item])
-            return [...prev, item.id]
-          }
-        })
-        break
-
-      case "watching":
-        setSelectedWatching((prev) => {
-          if (prev.includes(item.id)) {
-            // Remove from watching
-            setOrderedWatching((current) => current.filter((fav) => fav.id !== item.id))
-            return prev.filter((id) => id !== item.id)
-          } else {
-            // Add to watching
-            setOrderedWatching((current) => [...current, item])
-            return [...prev, item.id]
-          }
-        })
-        break
-
-      case "reading":
-        setSelectedReading((prev) => {
-          if (prev.includes(item.id)) {
-            // Remove from reading
-            setOrderedReading((current) => current.filter((fav) => fav.id !== item.id))
-            return prev.filter((id) => id !== item.id)
-          } else {
-            // Add to reading
-            setOrderedReading((current) => [...current, item])
-            return [...prev, item.id]
-          }
-        })
-        break
-    }
-  }
-
-  // Update the removeItem function to work with IDs
-  // Replace the existing removeItem function with this updated version
-  const removeItem = (id, section, e) => {
-    e.stopPropagation() // Prevent triggering card actions
-
-    switch (section) {
-      case "favorites":
-        setSelectedFavorites((prev) => prev.filter((itemId) => itemId !== id))
-        setOrderedFavorites((current) => current.filter((item) => item.id !== id))
-        break
-
-      case "watching":
-        setSelectedWatching((prev) => prev.filter((itemId) => itemId !== id))
-        setOrderedWatching((current) => current.filter((item) => item.id !== id))
-        break
-
-      case "reading":
-        setSelectedReading((prev) => prev.filter((itemId) => itemId !== id))
-        setOrderedReading((current) => current.filter((item) => item.id !== id))
-        break
-    }
-  }
-
   // ------------------ Context Value ------------------
   const value: MediaContextType = {
     trending,
@@ -874,9 +609,6 @@ export function MediaProvider({ children }: { children: ReactNode }) {
     popularBooks,
     collection,
     searchResults,
-    orderedFavorites,
-    orderedWatching,
-    orderedReading,
     isLoading,
     isTrendingLoading,
     isMoviesLoading,
@@ -930,8 +662,6 @@ export function MediaProvider({ children }: { children: ReactNode }) {
       if (items.length > 0 && trending.length > 0) setIsInitialDataLoaded(true)
     },
     isInitialDataLoaded,
-    toggleSelection,
-    removeItem,
   }
 
   return <MediaContext.Provider value={value}>{children}</MediaContext.Provider>

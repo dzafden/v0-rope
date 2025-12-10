@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { X, Plus, Sparkles, EyeOff, Tag, Check, MessageSquare, Clock, Library } from "lucide-react"
@@ -13,7 +12,6 @@ import TVShowDetails from "@/components/tv-show-details"
 import storage from "@/lib/storage"
 import ExpandedCardView from "@/components/expanded-card-view"
 import ConfirmDialog from "@/components/confirm-dialog"
-import TagDropdown from "@/components/tag-dropdown"
 
 interface TitleDetailsProps {
   media: any
@@ -47,8 +45,6 @@ export default function TitleDetails({
   const [selectedSimilarTitle, setSelectedSimilarTitle] = useState<any>(null)
   const [activeCardId, setActiveCardId] = useState<string | null>(null)
   const [addButtonClicked, setAddButtonClicked] = useState(false)
-  const [showTagDropdown, setShowTagDropdown] = useState(false)
-  const [tagDropdownPosition, setTagDropdownPosition] = useState({ x: 0, y: 0 })
 
   // Add state for confirmation dialog
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
@@ -164,7 +160,7 @@ export default function TitleDetails({
 
   const handleAddToCollection = useCallback(
     (item: any) => {
-      if (!collection.some((i) => i.id === item.id)) {
+      if (!collection.some((col) => col.id === item.id)) {
         addToCollection(item)
         setSimilarTitles((prev) =>
           prev.map((title) => (title.id === item.id ? { ...title, isInCollection: true } : title)),
@@ -174,6 +170,7 @@ export default function TitleDetails({
     [collection, addToCollection],
   )
 
+  // New function to handle removing from collection
   const handleRemoveFromCollection = useCallback(() => {
     if (media && media.id) {
       removeFromCollection(media.id)
@@ -244,38 +241,31 @@ export default function TitleDetails({
     [showNoteEditor],
   )
 
+  // Updated add to collection handler
   const handleAddToCollectionClick = useCallback(
     (e: React.MouseEvent) => {
       // Completely stop event propagation
-      if (e) {
-        e.preventDefault()
-        e.stopPropagation()
-      }
+      e.preventDefault()
+      e.stopPropagation()
 
-      // Create a separate event handler for the confirmation dialog
-      const handleConfirmation = () => {
-        // Prevent multiple clicks
-        if (addButtonClicked) return
-        setAddButtonClicked(true)
+      // Prevent multiple clicks
+      if (addButtonClicked) return
+      setAddButtonClicked(true)
 
-        // If already in collection, show confirmation dialog to remove
-        if (isInCollection) {
-          setShowRemoveConfirm(true)
-        } else {
-          // Add to collection
-          if (media && !collection.some((item) => item.id === media.id)) {
-            addToCollection(media)
-          }
+      // If already in collection, show confirmation dialog to remove
+      if (isInCollection) {
+        setShowRemoveConfirm(true)
+      } else {
+        // Add to collection
+        if (media && !collection.some((item) => item.id === media.id)) {
+          addToCollection(media)
         }
-
-        // Reset the button state after a delay
-        setTimeout(() => {
-          setAddButtonClicked(false)
-        }, 300) // Reduced from 1000ms to 300ms
       }
 
-      // Execute the handler
-      handleConfirmation()
+      // Reset the button state after a delay
+      setTimeout(() => {
+        setAddButtonClicked(false)
+      }, 1000)
     },
     [media, collection, addToCollection, addButtonClicked, isInCollection],
   )
@@ -309,36 +299,18 @@ export default function TitleDetails({
     setShowExpandedCard(true)
   }, [])
 
-  // Add an effect to handle closing the tag dropdown when clicking outside:
-  // useEffect(() => {
-  //   if (!showTagDropdown) return
-
-  //   const handleClickOutside = (e: MouseEvent) => {
-  //     // Don't close if clicking the tag button itself
-  //     const target = e.target as HTMLElement
-  //     if (target.closest('[aria-label="Manage Tags"]')) return
-
-  //     // Check if the click is outside the dropdown
-  //     const dropdownElements = document.querySelectorAll(".tag-dropdown")
-  //     let clickedInside = false
-
-  //     dropdownElements.forEach((element) => {
-  //       if (element.contains(target)) {
-  //         clickedInside = true
-  //       }
-  //     })
-
-  //     if (!clickedInside) {
-  //       setShowTagDropdown(false)
-  //     }
-  //   }
-
-  //   document.addEventListener("mousedown", handleClickOutside)
-  //   return () => document.removeEventListener("mousedown", handleClickOutside)
-  // }, [showTagDropdown])
-
   return (
     <>
+      {/* Close button */}
+      <div className="fixed top-4 right-4 z-[100]" onClick={onClose}>
+        <button
+          className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center shadow-md"
+          aria-label="Close details"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
       <motion.div
         className="fixed inset-0 z-50 bg-black/80 flex flex-col overflow-hidden"
         initial={{ opacity: 0 }}
@@ -346,22 +318,6 @@ export default function TitleDetails({
         exit={{ opacity: 0 }}
         onClick={onClose}
       >
-        {/* Close button - moved inside the motion.div */}
-        <div
-          className="fixed top-4 right-4 z-[100]"
-          onClick={(e) => {
-            e.stopPropagation() // Prevent double triggering
-            onClose()
-          }}
-        >
-          <button
-            className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center shadow-md"
-            aria-label="Close details"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
         {/* Background effect that takes colors from the poster - moved outside the sliding container */}
         <div
           className="absolute inset-0 -z-10 overflow-hidden will-change-transform"
@@ -382,13 +338,7 @@ export default function TitleDetails({
           initial={{ y: "100%" }}
           animate={{ y: 0 }}
           exit={{ y: "100%" }}
-          transition={{
-            type: "spring",
-            damping: 35,
-            stiffness: 300,
-            restDelta: 0.001,
-            restSpeed: 0.001,
-          }}
+          transition={{ type: "spring", damping: 30, stiffness: 300 }}
           onClick={(e) => e.stopPropagation()}
           ref={detailsRef}
           onPointerDown={handlePointerDown}
@@ -446,7 +396,7 @@ export default function TitleDetails({
               >
                 <motion.button
                   ref={addButtonRef}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center cursor-pointer ${
+                  className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer ${
                     isInCollection ? "bg-green-600" : "bg-purple-600"
                   }`}
                   whileHover={{ scale: 1.1 }}
@@ -455,13 +405,13 @@ export default function TitleDetails({
                   disabled={addButtonClicked}
                   aria-label={isInCollection ? "Remove from Collection" : "Add to Collection"}
                 >
-                  {isInCollection ? <Library className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                  {isInCollection ? <Library className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
                 </motion.button>
               </div>
 
               {media.type !== "tv" && (
                 <motion.button
-                  className={`w-8 h-8 rounded-full flex items-center justify-center cursor-pointer ${isWatched ? "bg-green-600" : "bg-zinc-700"}`}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer ${isWatched ? "bg-green-600" : "bg-zinc-700"}`}
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
                   onClick={(e) => {
@@ -471,20 +421,20 @@ export default function TitleDetails({
                   }}
                   aria-label={isWatched ? "Mark as Unwatched" : "Mark as Watched"}
                 >
-                  <Check className="w-4 h-4" />
+                  <Check className="w-5 h-5" />
                 </motion.button>
               )}
 
               <motion.button
-                className={`w-8 h-8 rounded-full flex items-center justify-center cursor-pointer ${notes.length > 0 ? "bg-purple-600" : "bg-zinc-700"}`}
+                className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer ${notes.length > 0 ? "bg-purple-600" : "bg-zinc-700"}`}
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={handleNoteButtonClick}
                 aria-label="Add Note"
               >
-                <MessageSquare className="w-4 h-4" />
+                <MessageSquare className="w-5 h-5" />
                 {notes.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-purple-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 bg-purple-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                     {notes.length}
                   </span>
                 )}
@@ -492,7 +442,7 @@ export default function TitleDetails({
 
               {hideItem && (
                 <motion.button
-                  className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center cursor-pointer"
+                  className="w-10 h-10 rounded-full bg-red-600 flex items-center justify-center cursor-pointer"
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
                   onClick={(e) => {
@@ -504,24 +454,22 @@ export default function TitleDetails({
                   }}
                   aria-label="Hide"
                 >
-                  <EyeOff className="w-4 h-4" />
+                  <EyeOff className="w-5 h-5" />
                 </motion.button>
               )}
 
               {showTagsButton && (
                 <motion.button
-                  className="w-8 h-8 rounded-full bg-teal-600 flex items-center justify-center cursor-pointer"
+                  className="w-10 h-10 rounded-full bg-teal-600 flex items-center justify-center cursor-pointer"
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
-                    setTagDropdownPosition({ x: e.clientX, y: e.clientY })
-                    setShowTagDropdown(true)
                   }}
                   aria-label="Manage Tags"
                 >
-                  <Tag className="w-4 h-4" />
+                  <Tag className="w-5 h-5" />
                 </motion.button>
               )}
             </div>
@@ -661,7 +609,7 @@ export default function TitleDetails({
                     <div key={item.id} className="flex-shrink-0 w-[140px] sm:w-[160px]">
                       <MediaCard
                         {...item}
-                        isInCollection={collection.some((collectionItem) => collectionItem.id === item.id)}
+                        isInCollection={collection.some((col) => col.id === item.id)}
                         onShowDetails={() => handleShowDetails(item)}
                         showHideButton={false}
                         showTagsButton={false}
@@ -670,7 +618,7 @@ export default function TitleDetails({
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-4 text-zinc-400">No similar titles found</div>
+                <div className="text-center py-4 text-zinc-500">No similar titles found</div>
               )}
             </div>
           </div>
@@ -691,16 +639,6 @@ export default function TitleDetails({
             addTagToItem={addTagToItem}
           />
         )}
-
-        {/* Tag Dropdown */}
-        {showTagDropdown && (
-          <TagDropdown
-            itemId={media.id}
-            mediaType={media.type}
-            onClose={() => setShowTagDropdown(false)}
-            position={tagDropdownPosition}
-          />
-        )}
       </motion.div>
 
       {/* Expanded Card View */}
@@ -715,13 +653,15 @@ export default function TitleDetails({
       />
 
       {/* Confirmation Dialog for removing from collection */}
-      {showRemoveConfirm && (
-        <ConfirmDialog
-          message={`Remove "${media.title}" from your collection?`}
-          onConfirm={handleRemoveFromCollection}
-          onCancel={() => setShowRemoveConfirm(false)}
-        />
-      )}
+      <AnimatePresence>
+        {showRemoveConfirm && (
+          <ConfirmDialog
+            message={`Remove "${media.title}" from your collection?`}
+            onConfirm={handleRemoveFromCollection}
+            onCancel={() => setShowRemoveConfirm(false)}
+          />
+        )}
+      </AnimatePresence>
     </>
   )
 }

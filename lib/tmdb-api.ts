@@ -401,7 +401,7 @@ export function extractTmdbId(mediaId: string): number | null {
   return null
 }
 
-// Add this more resilient version of fetchTVShowDetails that handles network errors better
+// New function to fetch TV show details including seasons list with retry logic
 export async function fetchTVShowDetails(tvId: number, signal?: AbortSignal): Promise<TmdbTVShowDetails> {
   const maxRetries = 3
   let retryCount = 0
@@ -418,16 +418,12 @@ export async function fetchTVShowDetails(tvId: number, signal?: AbortSignal): Pr
       const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : undefined
 
       try {
-        // Use a try-catch inside the retry loop to handle fetch errors
-        const response = await fetch(`https://api.themoviedb.org/3/tv/${tvId}?api_key=${API_KEY}`, {
+        const response = await fetch(`${BASE_URL}/tv/${tvId}?api_key=${API_KEY}`, {
           signal: internalSignal,
           // Add cache control headers to help with potential rate limiting
           headers: {
             "Cache-Control": "max-age=3600",
           },
-        }).catch((error) => {
-          // Convert fetch errors to a rejected promise with the error
-          return Promise.reject(error)
         })
 
         // Clear the timeout as soon as we get a response
@@ -468,24 +464,7 @@ export async function fetchTVShowDetails(tvId: number, signal?: AbortSignal): Pr
 
   // If we've exhausted all retries, throw the last error
   console.error(`Failed to fetch TV show details after ${maxRetries} attempts:`, lastError)
-
-  // Return a minimal valid object instead of throwing to prevent UI crashes
-  return {
-    id: tvId,
-    name: "Unknown Show",
-    overview: "",
-    poster_path: null,
-    backdrop_path: null,
-    vote_average: 0,
-    media_type: "tv",
-    status: "not_airing",
-    in_production: false,
-    number_of_seasons: 0,
-    number_of_episodes: 0,
-    seasons: [],
-    networks: [],
-    created_by: [],
-  } as TmdbTVShowDetails
+  throw lastError || new Error("Failed to fetch TV show details after multiple attempts")
 }
 
 // New function to fetch specific season details with episodes

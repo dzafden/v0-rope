@@ -1,7 +1,5 @@
 "use client"
 
-import type React from "react"
-
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { motion } from "framer-motion"
 import { Tag, Plus, Check, X } from "lucide-react"
@@ -115,13 +113,7 @@ export default function TagDropdown({ itemId, mediaType, onClose, position }: Ta
 
   // Toggle tag selection – wrapped in useCallback
   const toggleTag = useCallback(
-    (tagId: string, e?: React.MouseEvent) => {
-      // Stop event propagation to prevent closing the TitleDetails
-      if (e) {
-        e.preventDefault()
-        e.stopPropagation()
-      }
-
+    (tagId: string) => {
       if (selectedTags.includes(tagId)) {
         setSelectedTags((prev) => prev.filter((id) => id !== tagId))
         removeTagFromItem(itemId, tagId)
@@ -134,51 +126,41 @@ export default function TagDropdown({ itemId, mediaType, onClose, position }: Ta
   )
 
   // Handle creating a new tag – wrapped in useCallback
-  const handleCreateTag = useCallback(
-    (e?: React.MouseEvent) => {
-      // Stop event propagation
-      if (e) {
-        e.preventDefault()
-        e.stopPropagation()
-      }
-
-      const trimmed = newTagName.trim()
-      if (!trimmed) {
-        setError("Tag name cannot be empty")
-        return
-      }
-      if (trimmed.length > 40) {
-        setError("Tag name must be 40 characters or less")
-        return
-      }
-      const tagId = createTag(trimmed)
-      if (tagId) {
-        addTagToItem(itemId, tagId)
-        setSelectedTags((prev) => [...prev, tagId])
-        setNewTagName("")
-        setIsAddingTag(false)
-        setError("")
-      } else {
-        const customTagCount = allTags.filter((tag) => tag.isCustom).length
-        setError(
-          customTagCount >= 10 ? "You can only create up to 10 custom tags" : "A tag with this name already exists",
-        )
-      }
-    },
-    [newTagName, createTag, addTagToItem, itemId, allTags],
-  )
+  const handleCreateTag = useCallback(() => {
+    const trimmed = newTagName.trim()
+    if (!trimmed) {
+      setError("Tag name cannot be empty")
+      return
+    }
+    if (trimmed.length > 40) {
+      setError("Tag name must be 40 characters or less")
+      return
+    }
+    const tagId = createTag(trimmed)
+    if (tagId) {
+      addTagToItem(itemId, tagId)
+      setSelectedTags((prev) => [...prev, tagId])
+      setNewTagName("")
+      setIsAddingTag(false)
+      setError("")
+    } else {
+      const customTagCount = allTags.filter((tag) => tag.isCustom).length
+      setError(
+        customTagCount >= 10 ? "You can only create up to 10 custom tags" : "A tag with this name already exists",
+      )
+    }
+  }, [newTagName, createTag, addTagToItem, itemId, allTags])
 
   return typeof document !== "undefined"
     ? createPortal(
         <motion.div
           ref={dropdownRef}
-          className="fixed z-[100] w-64 bg-zinc-900 rounded-xl border border-zinc-700 shadow-xl overflow-hidden tag-dropdown"
+          className="fixed z-[100] w-64 bg-zinc-900 rounded-xl border border-zinc-700 shadow-xl overflow-hidden"
           style={dropdownStyle}
           variants={containerVariants}
           initial="hidden"
           animate="visible"
           exit="exit"
-          onClick={(e) => e.stopPropagation()} // Stop propagation on the entire dropdown
         >
           <div className="p-3 border-b border-zinc-800">
             <h3 className="text-sm font-medium flex items-center">
@@ -195,7 +177,7 @@ export default function TagDropdown({ itemId, mediaType, onClose, position }: Ta
                   selectedTags.includes(tag.id) ? "bg-teal-900/30 text-teal-200" : "hover:bg-zinc-800 text-zinc-300",
                 )}
                 {...buttonVariants}
-                onClick={(e) => toggleTag(tag.id, e)}
+                onClick={() => toggleTag(tag.id)}
               >
                 <span>{tag.name}</span>
                 {selectedTags.includes(tag.id) && <Check className="w-4 h-4 text-teal-400" />}
@@ -213,7 +195,7 @@ export default function TagDropdown({ itemId, mediaType, onClose, position }: Ta
                     className="flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
                     maxLength={40}
                   />
-                  <button className="ml-1 p-1 rounded-lg bg-teal-600 text-white" onClick={(e) => handleCreateTag(e)}>
+                  <button className="ml-1 p-1 rounded-lg bg-teal-600 text-white" onClick={handleCreateTag}>
                     <Check className="w-4 h-4" />
                   </button>
                   <button

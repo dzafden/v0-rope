@@ -114,7 +114,7 @@ export default function OnboardingGame({
   })
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
-  const gameContainerRef = useRef<HTMLDivElement>(null)
+  const gameContainerRef = useRef(HTMLDivElement>(null)\
   const preloadingInitiatedRef = useRef(false)
   const backgroundLoadingRef = useRef(false)
   const dataSharedRef = useRef(false)

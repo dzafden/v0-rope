@@ -130,78 +130,59 @@ export function RetroOverlay() {
  * Pixelated overlay effect with animated pixels
  */
 export function PixelatedOverlay() {
-  // Reduce the number of pixels and optimize animation
-  const pixelSize = 8 // Increased from 6 to 8 for fewer elements
-  const pixelOpacity = 0.2 // Keep the same base opacity
+  const pixelSize = 6 // Size of each pixel
+  const pixelOpacity = 0.2 // Base opacity of pixels
 
-  // Generate fewer pixels with optimized animation
+  // Generate a grid of pixels with random opacity variations
   const pixels = useMemo(() => {
     const result = []
     const cols = Math.ceil(160 / pixelSize)
     const rows = Math.ceil(240 / pixelSize)
 
-    // Generate only 40% of the pixels for better performance
-    const totalPixels = Math.floor(cols * rows * 0.4)
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        // Random opacity variation
+        const opacityVariation = Math.random() * 0.15
+        const finalOpacity = pixelOpacity + opacityVariation
 
-    for (let i = 0; i < totalPixels; i++) {
-      const x = Math.floor(Math.random() * cols) * pixelSize
-      const y = Math.floor(Math.random() * rows) * pixelSize
-
-      result.push({
-        x,
-        y,
-        opacity: pixelOpacity + Math.random() * 0.15,
-        hue: Math.floor(Math.random() * 360),
-        delay: Math.random() * 2,
-        // Group animations to reduce unique animations
-        animationGroup: Math.floor(Math.random() * 5),
-      })
+        result.push({
+          x: x * pixelSize,
+          y: y * pixelSize,
+          opacity: finalOpacity,
+          hue: Math.floor(Math.random() * 360), // Random hue for subtle color variation
+          delay: Math.random() * 2, // Random animation delay
+        })
+      }
     }
     return result
   }, [])
 
-  // Pre-calculate animation values for each group to reduce calculations
-  const animationGroups = useMemo(() => {
-    return Array(5)
-      .fill(0)
-      .map(() => ({
-        duration: 2 + Math.random(),
-        opacityValues: [pixelOpacity, pixelOpacity * 1.5, pixelOpacity],
-      }))
-  }, [])
-
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {pixels.map((pixel, i) => {
-        const animGroup = animationGroups[pixel.animationGroup]
-        return (
-          <motion.div
-            key={i}
-            className="absolute bg-white"
-            style={{
-              left: `${pixel.x}px`,
-              top: `${pixel.y}px`,
-              width: `${pixelSize}px`,
-              height: `${pixelSize}px`,
-              opacity: pixel.opacity,
-              mixBlendMode: "overlay",
-              filter: `hue-rotate(${pixel.hue}deg)`,
-              willChange: "opacity",
-              transform: "translateZ(0)", // Force hardware acceleration
-            }}
-            animate={{
-              opacity: animGroup.opacityValues,
-            }}
-            transition={{
-              duration: animGroup.duration,
-              repeat: Number.POSITIVE_INFINITY,
-              repeatType: "reverse",
-              delay: pixel.delay,
-              ease: "linear",
-            }}
-          />
-        )
-      })}
+      {pixels.map((pixel, i) => (
+        <motion.div
+          key={i}
+          className="absolute bg-white"
+          style={{
+            left: `${pixel.x}px`,
+            top: `${pixel.y}px`,
+            width: `${pixelSize}px`,
+            height: `${pixelSize}px`,
+            opacity: pixel.opacity,
+            mixBlendMode: "overlay",
+            filter: `hue-rotate(${pixel.hue}deg)`,
+          }}
+          animate={{
+            opacity: [pixel.opacity, pixel.opacity * 1.5, pixel.opacity],
+          }}
+          transition={{
+            duration: 2 + Math.random(),
+            repeat: Number.POSITIVE_INFINITY,
+            repeatType: "reverse",
+            delay: pixel.delay,
+          }}
+        />
+      ))}
       <div className="absolute inset-0 bg-[linear-gradient(to_bottom,transparent_50%,rgba(0,0,0,0.2)_50%)] bg-[length:100%_4px]" />
     </div>
   )

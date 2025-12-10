@@ -56,7 +56,6 @@ export default function TVShowDetails({ mediaId }: TVShowDetailsProps) {
   >({})
   const [editingNote, setEditingNote] = useState<{ type: "season" | "episode"; id: number | string } | null>(null)
   const [expandedNoteId, setExpandedNoteId] = useState<{ type: "season" | "episode"; id: number | string } | null>(null)
-  const [expandedSeason, setExpandedSeason] = useState<number | null>(null)
 
   // For episode modal
   const [selectedEpisode, setSelectedEpisode] = useState<TmdbEpisode | null>(null)
@@ -144,18 +143,12 @@ export default function TVShowDetails({ mediaId }: TVShowDetailsProps) {
 
   // Save season notes whenever they change
   useEffect(() => {
-    if (Object.keys(seasonNotes).length > 0) {
-      console.log(`Saving season notes to storage key: ${mediaId}-seasonNotes`, seasonNotes)
-      storage.set(`${mediaId}-seasonNotes`, seasonNotes)
-    }
+    if (Object.keys(seasonNotes).length > 0) storage.set(`${mediaId}-seasonNotes`, seasonNotes)
   }, [seasonNotes, mediaId])
 
   // Save episode notes whenever they change
   useEffect(() => {
-    if (Object.keys(episodeNotes).length > 0) {
-      console.log(`Saving episode notes to storage key: ${mediaId}-episodeNotes`, episodeNotes)
-      storage.set(`${mediaId}-episodeNotes`, episodeNotes)
-    }
+    if (Object.keys(episodeNotes).length > 0) storage.set(`${mediaId}-episodeNotes`, episodeNotes)
   }, [episodeNotes, mediaId])
 
   // --- Fetch Data from TMDB ---
@@ -261,10 +254,8 @@ export default function TVShowDetails({ mediaId }: TVShowDetailsProps) {
   const handleSaveNote = useCallback(
     (type: "season" | "episode", id: number | string, text: string) => {
       if (type === "season") {
-        console.log(`Saving season note for season ${id}:`, text)
         setSeasonNotes((prev) => ({ ...prev, [id as number]: text }))
       } else if (type === "episode") {
-        console.log(`Saving episode note for episode ${id}:`, text)
         setEpisodeNotes((prev) => {
           const episodeId = id as string
           const newNote = { id: Date.now().toString(), text, timestamp: Date.now() }
@@ -367,10 +358,7 @@ export default function TVShowDetails({ mediaId }: TVShowDetailsProps) {
 
       {/* Season info and progress */}
       {seasonDetails && (
-        <div
-          className="mb-4 bg-zinc-800/30 p-4 rounded-xl cursor-pointer"
-          onClick={() => setExpandedSeason(expandedSeason === selectedSeason ? null : selectedSeason)}
-        >
+        <div className="mb-4 bg-zinc-800/30 p-4 rounded-xl">
           <div className="flex justify-between items-center mb-2">
             <div className="flex items-center gap-2">
               <h3 className="font-medium">{seasonDetails.name}</h3>
@@ -383,8 +371,7 @@ export default function TVShowDetails({ mediaId }: TVShowDetailsProps) {
                 )}
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
-                onClick={(e) => {
-                  e.stopPropagation() // Prevent triggering the parent click
+                onClick={() => {
                   const isCurrentlyWatched = watchProgress[mediaId]?.seasons[selectedSeason]?.watched
                   setWatchProgress((prev) => {
                     const newProgress = { ...prev }
@@ -439,15 +426,12 @@ export default function TVShowDetails({ mediaId }: TVShowDetailsProps) {
                   width: { duration: 0.3, ease: "easeOut" },
                   paddingRight: { duration: 0.3, ease: "easeOut" },
                 }}
-                onClick={(e) => {
-                  e.stopPropagation() // Prevent triggering the parent click
+                onClick={() => {
                   setEditingNote((prev) =>
                     prev && prev.type === "season" && prev.id === selectedSeason
                       ? null
                       : { type: "season", id: selectedSeason },
                   )
-                  // Ensure the season is expanded when adding a note
-                  setExpandedSeason(selectedSeason)
                 }}
                 title={seasonNotes[selectedSeason] ? "Edit season note" : "Add season note"}
               >
@@ -517,20 +501,6 @@ export default function TVShowDetails({ mediaId }: TVShowDetailsProps) {
             </div>
           )}
 
-          {/* Show existing season notes when expanded */}
-          <AnimatePresence>
-            {expandedSeason === selectedSeason && seasonNotes[selectedSeason] && !editingNote?.type === "season" && (
-              <motion.div
-                className="mt-4 bg-zinc-800/50 rounded-lg p-3"
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-              >
-                <p className="text-sm">{seasonNotes[selectedSeason]}</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
           {/* Season note editor */}
           {editingNote?.type === "season" && editingNote?.id === selectedSeason && (
             <motion.div
@@ -538,7 +508,6 @@ export default function TVShowDetails({ mediaId }: TVShowDetailsProps) {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
             >
               <textarea
                 className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-purple-500"
@@ -551,17 +520,13 @@ export default function TVShowDetails({ mediaId }: TVShowDetailsProps) {
                     [selectedSeason]: e.target.value,
                   }))
                 }
-                onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
               />
               <div className="flex justify-end gap-2 mt-2">
                 <motion.button
                   className="px-3 py-1 rounded-lg text-xs bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  onClick={(e) => {
-                    e.stopPropagation() // Prevent triggering the parent click
-                    setEditingNote(null)
-                  }}
+                  onClick={() => setEditingNote(null)}
                 >
                   Cancel
                 </motion.button>
@@ -569,10 +534,7 @@ export default function TVShowDetails({ mediaId }: TVShowDetailsProps) {
                   className="px-3 py-1 rounded-lg text-xs bg-purple-600 text-white hover:bg-purple-500"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  onClick={(e) => {
-                    e.stopPropagation() // Prevent triggering the parent click
-                    handleSaveNote("season", selectedSeason, seasonNotes[selectedSeason] || "")
-                  }}
+                  onClick={() => handleSaveNote("season", selectedSeason, seasonNotes[selectedSeason] || "")}
                 >
                   Save
                 </motion.button>
@@ -675,23 +637,13 @@ export default function TVShowDetails({ mediaId }: TVShowDetailsProps) {
                           }}
                           onClick={(e) => {
                             e.stopPropagation()
-                            // First expand the episode card if it's not already expanded
-                            if (!isExpanded) {
-                              setSelectedEpisode(episode)
-                            }
-
-                            // Then set the editing state for the note
-                            setEditingNote({ type: "episode", id: `${selectedSeason}-${episode.episode_number}` })
-
-                            // Focus the textarea after a short delay to ensure it's rendered
-                            setTimeout(() => {
-                              const textarea = document.querySelector(
-                                `textarea[data-episode="${selectedSeason}-${episode.episode_number}"]`,
-                              )
-                              if (textarea) {
-                                textarea.focus()
-                              }
-                            }, 100)
+                            setEditingNote((prev) =>
+                              prev &&
+                              prev.type === "episode" &&
+                              prev.id === `${selectedSeason}-${episode.episode_number}`
+                                ? null
+                                : { type: "episode", id: `${selectedSeason}-${episode.episode_number}` },
+                            )
                           }}
                           title={
                             episodeNotes[`${selectedSeason}-${episode.episode_number}`]
@@ -803,7 +755,6 @@ export default function TVShowDetails({ mediaId }: TVShowDetailsProps) {
                                 placeholder="Add notes about this episode..."
                                 rows={3}
                                 autoFocus
-                                data-episode={`${selectedSeason}-${episode.episode_number}`}
                                 onClick={(e) => e.stopPropagation()}
                                 onChange={(e) => e.stopPropagation()}
                               />

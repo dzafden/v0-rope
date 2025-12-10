@@ -11,12 +11,13 @@ import { searchBooks } from "@/lib/openlibrary-api"
 import { useOnboarding } from "@/context/onboarding-context"
 import { useStickerCustomization } from "@/hooks/use-sticker-customization"
 import CustomizationModal from "@/components/customization-modal"
+import MediaGrid from "@/components/media-grid"
 import TitleDetails from "@/components/title-details"
 import CollapsibleSection from "@/components/collapsible-section"
+import { extractTmdbId, fetchTVShowDetails } from "@/lib/tmdb-api"
+import storage from "@/lib/storage"
 import ConfirmDialog from "@/components/confirm-dialog"
 import { useDebouncedCallback } from "use-debounce"
-import { FixedSizeGrid as Grid } from "react-window"
-import AutoSizer from "react-virtualized-auto-sizer"
 import React from "react"
 
 const TAG_EQUIVALENTS = {
@@ -27,6 +28,7 @@ const TAG_EQUIVALENTS = {
 }
 
 const MAX_PARALLEL_SEARCHES = 10
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000 // 30 days in milliseconds
 
 // Add this custom hook at the top of the file, after the imports
 function useScrollVisibility(threshold = 10) {
@@ -64,16 +66,14 @@ function TagFilterSection({ showTagFilters, relevantTags, selectedTags, toggleTa
           exit={{ opacity: 0, height: 0 }}
           className="overflow-hidden"
         >
-          <div className="flex flex-wrap gap-1.5 mt-2 pb-3 px-4">
-            {" "}
-            {/* Changed pb-2 to pb-3 for more bottom padding */}
+          <div className="flex flex-wrap gap-1.5 mt-2 pb-2 px-4">
             {relevantTags.map((tag) => {
               const count = getTagItemCount(tag.id)
               return (
                 <motion.button
                   key={tag.id}
                   className={cn(
-                    "px-2 py-1 rounded-full text-xs flex items-center gap-1", // Changed from px-3 py-1 to px-2 py-1 for more compact buttons
+                    "px-3 py-1 rounded-full text-xs flex items-center gap-1",
                     selectedTags.includes(tag.id) ? "bg-teal-600 text-white" : "bg-zinc-800 text-zinc-300",
                   )}
                   whileHover={{ scale: 1.05 }}
@@ -82,10 +82,10 @@ function TagFilterSection({ showTagFilters, relevantTags, selectedTags, toggleTa
                   disabled={count === 0}
                   title={count === 0 ? "No items with this tag" : undefined}
                 >
-                  <span className="text-xs">{tag.name}</span> {/* Added explicit text-xs */}
+                  <span>{tag.name}</span>
                   <span
                     className={cn(
-                      "text-[9px] rounded-full px-1 min-w-[16px] text-center", // Changed from text-[10px] and min-w-[18px] to text-[9px] and min-w-[16px]
+                      "text-[10px] rounded-full px-1.5 min-w-[18px] text-center",
                       selectedTags.includes(tag.id) ? "bg-teal-800" : "bg-zinc-700",
                     )}
                   >
@@ -222,57 +222,11 @@ class ErrorBoundary extends React.Component {
 }
 
 function VirtualizedMediaGrid({ items, renderItem, columnCount = 3 }) {
-  // Only use virtualization for large collections
-  if (items.length < 50) {
-    return (
-      <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6 overflow-visible pb-0 mb-0">
-        {items.map((item, index) => (
-          <div key={item.id}>{renderItem(item)}</div>
-        ))}
-      </div>
-    )
-  }
-
-  const rowCount = Math.ceil(items.length / columnCount)
-
   return (
-    <div style={{ height: "calc(100vh - 120px)", width: "100%" }} className="overflow-visible no-scrollbar">
-      <AutoSizer>
-        {({ height, width }) => {
-          const columnWidth = width / columnCount
-          const rowHeight = columnWidth * 1.5 // Maintain aspect ratio
-
-          return (
-            <Grid
-              columnCount={columnCount}
-              columnWidth={columnWidth}
-              height={height}
-              rowCount={rowCount}
-              rowHeight={rowHeight}
-              width={width}
-              className="overflow-visible no-scrollbar"
-            >
-              {({ columnIndex, rowIndex, style }) => {
-                const index = rowIndex * columnCount + columnIndex
-                if (index >= items.length) return null
-
-                return (
-                  <div
-                    style={{
-                      ...style,
-                      padding: "8px",
-                      display: "flex",
-                      justifyContent: "center",
-                    }}
-                  >
-                    {renderItem(items[index])}
-                  </div>
-                )
-              }}
-            </Grid>
-          )
-        }}
-      </AutoSizer>
+    <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+      {items.map((item, index) => (
+        <div key={item.id}>{renderItem(item)}</div>
+      ))}
     </div>
   )
 }
@@ -287,7 +241,6 @@ export default function CollectionPage() {
     getItemTags,
     addTagToItem,
     hideMediaItem,
-    createTag,
   } = useMedia()
 
   const [activeFilter, setActiveFilter] = useState("All")
@@ -343,8 +296,6 @@ export default function CollectionPage() {
   const [showTagSelectionModal, setShowTagSelectionModal] = useState(false)
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
   const [isEditingFavorites, setIsEditingFavorites] = useState(false)
-  const [newTagName, setNewTagName] = useState<string>("")
-  const [tagError, setTagError] = useState<string>("")
 
   // No need to destructure since we're importing the storage object directly
 
@@ -373,17 +324,7 @@ export default function CollectionPage() {
 
   // Now use filterMediaItem in filteredCollection
   const filteredCollection = useMemo(() => {
-    // First filter the collection
-    const filtered = collection.filter(filterMediaItem)
-
-    // Then sort by addedAt timestamp (newest first)
-    return filtered.sort((a, b) => {
-      // If addedAt is missing for either item, put items with timestamps first
-      if (!a.addedAt) return 1
-      if (!b.addedAt) return -1
-      // Sort in descending order (newest first)
-      return b.addedAt - a.addedAt
-    })
+    return collection.filter(filterMediaItem)
   }, [collection, filterMediaItem])
 
   const relevantTags = useMemo(() => {
@@ -642,6 +583,118 @@ export default function CollectionPage() {
     [hideMediaItem],
   )
 
+  // Updated getAiringNowItems function to only include shows that are currently relevant
+  const getAiringNowItems = useCallback(() => {
+    const now = Date.now()
+
+    return collection.filter((item) => {
+      // First apply search filter
+      if (searchQuery && !item.title.toLowerCase().includes(searchQuery.toLowerCase())) return false
+
+      // Only include TV shows
+      if (item.type !== "tv") return false
+
+      // Check if the show is currently relevant (within the last 30 days)
+      const hasRecentPremiere = item.releaseDate && new Date(item.releaseDate).getTime() > now - THIRTY_DAYS_MS
+      const hasRecentEpisode = item.lastEpisodeDate && new Date(item.lastEpisodeDate).getTime() > now - THIRTY_DAYS_MS
+      const isFirstSeason =
+        item.season === 1 && item.releaseDate && new Date(item.releaseDate).getTime() > now - THIRTY_DAYS_MS
+
+      // Include if any of the relevance criteria are met
+      return hasRecentPremiere || hasRecentEpisode || isFirstSeason || item.airingStatus === "airing"
+    })
+  }, [collection, searchQuery])
+
+  // Replace the existing TV show airing status update effect with this optimized version
+  useEffect(() => {
+    const updateAiringStatus = async () => {
+      const tvShows = collection.filter((item) => item.type === "tv")
+      const lastUpdate = storage.get<number>("lastAiringStatusUpdate", 0)
+      const now = Date.now()
+      const oneDayMs = 24 * 60 * 60 * 1000
+
+      // Skip if updated recently and all shows have status
+      if (now - lastUpdate < oneDayMs && tvShows.every((show) => show.airingStatus)) {
+        return
+      }
+
+      // Only update shows that need updating
+      const showsToUpdate = tvShows.filter((show) => {
+        // Update if no status or if status is old
+        return !show.airingStatus || !show.lastStatusUpdate || now - show.lastStatusUpdate > oneDayMs
+      })
+
+      if (showsToUpdate.length === 0) return
+
+      const MAX_CONCURRENT_REQUESTS = 2
+      const updateQueue = [...showsToUpdate]
+      const activeRequests = new Set()
+
+      const processQueue = async () => {
+        while (updateQueue.length > 0 && activeRequests.size < MAX_CONCURRENT_REQUESTS) {
+          const show = updateQueue.shift()
+          if (!show) continue
+
+          activeRequests.add(show.id)
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 8000)
+
+          try {
+            const tmdbId = extractTmdbId(show.id)
+            if (!tmdbId) {
+              activeRequests.delete(show.id)
+              continue
+            }
+
+            // Add delay between requests to avoid rate limiting
+            await new Promise((resolve) => setTimeout(resolve, 500))
+
+            const details = await fetchTVShowDetails(tmdbId, controller.signal)
+            const isAiring =
+              details.status === "Returning Series" || details.status === "In Production" || details.in_production
+
+            // Store last episode date if available
+            let lastEpisodeDate = null
+            if (details.last_episode_to_air && details.last_episode_to_air.air_date) {
+              lastEpisodeDate = details.last_episode_to_air.air_date
+            }
+
+            updateMediaCustomization(show.id, {
+              airingStatus: isAiring ? "airing" : "not_airing",
+              lastStatusUpdate: now,
+              lastEpisodeDate: lastEpisodeDate,
+              season: details.number_of_seasons || 1,
+            })
+          } catch (error) {
+            if (error.name !== "AbortError") {
+              console.error(`Error updating airing status for ${show?.title || "unknown show"}:`, error)
+            }
+          } finally {
+            clearTimeout(timeoutId)
+            activeRequests.delete(show.id)
+
+            // Add a small delay before processing the next item
+            await new Promise((resolve) => setTimeout(resolve, 300))
+
+            if (updateQueue.length > 0) {
+              processQueue()
+            }
+          }
+        }
+      }
+
+      // Start fewer concurrent requests initially
+      for (let i = 0; i < Math.min(MAX_CONCURRENT_REQUESTS, updateQueue.length); i++) {
+        processQueue()
+      }
+
+      storage.set("lastAiringStatusUpdate", now)
+    }
+
+    updateAiringStatus()
+  }, [collection, updateMediaCustomization])
+
+  // Find the renderMediaCard function and update it to ensure fixed dimensions
   const renderMediaCard = useCallback(
     (item) => (
       <div
@@ -695,9 +748,9 @@ export default function CollectionPage() {
 
   return (
     <ErrorBoundary>
-      <div className="h-full overflow-y-auto bg-gradient-to-b from-zinc-900 to-black pb-0">
+      <div className="h-full overflow-y-auto bg-gradient-to-b from-zinc-900 to-black pb-20 no-scrollbar">
         <motion.div
-          className="sticky top-0 z-10 pt-4 px-4 pb-1 bg-black/80 backdrop-blur-md"
+          className="sticky top-0 z-10 p-4 bg-black/80 backdrop-blur-md"
           initial={{ y: -50 }}
           animate={{
             y: 0,
@@ -707,7 +760,7 @@ export default function CollectionPage() {
           }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
         >
-          <div className="flex justify-between items-center mb-2">
+          <div className="flex justify-between items-center mb-4">
             <div className="flex-1 mr-2 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400 w-4 h-4" />
               <input
@@ -772,8 +825,7 @@ export default function CollectionPage() {
                 {isSelectionMode ? <X className="w-4 h-4" /> : <CheckSquare className="w-4 h-4" />}
               </motion.button>
               <motion.div
-                className="bg-purple-600 rounded-full w-8 h-8 flex items-center
-justify-center"
+                className="bg-purple-600 rounded-full w-8 h-8 flex items-center justify-center"
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={() => setShowBulkImportModal(true)}
@@ -791,15 +843,13 @@ justify-center"
                 exit={{ opacity: 0, height: 0 }}
                 className="overflow-hidden"
               >
-                <div className="flex flex-col gap-2 pt-2 pb-2 px-2 sm:px-4 relative">
-                  {" "}
-                  {/* Added pb-2 for bottom padding */}
+                <div className="flex flex-col gap-2 pt-2 px-2 sm:px-4 relative">
                   <motion.div className="flex overflow-x-auto gap-2 scrollbar-hide no-scrollbar">
                     {["All", "Movies", "TV Shows", "Books"].map((filter) => (
                       <motion.button
                         key={filter}
                         className={cn(
-                          "px-3 py-1.5 rounded-full text-xs whitespace-nowrap", // Changed from px-4 py-2 and text-sm to px-3 py-1.5 and text-xs
+                          "px-4 py-2 rounded-full text-sm whitespace-nowrap",
                           activeFilter === filter ? "bg-purple-600 text-white" : "bg-zinc-800 text-zinc-300",
                         )}
                         whileHover={{ scale: 1.05 }}
@@ -814,23 +864,17 @@ justify-center"
                     ))}
                     <motion.button
                       className={cn(
-                        "px-3 py-1.5 rounded-full text-xs whitespace-nowrap flex items-center gap-1", // Changed from px-4 py-2 and text-sm to px-3 py-1.5 and text-xs
+                        "px-4 py-2 rounded-full text-sm whitespace-nowrap flex items-center gap-1",
                         showTagFilters ? "bg-teal-700 text-white" : "bg-zinc-800 text-zinc-300",
                       )}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
-                      onClick={() => {
-                        setShowTagFilters(!showTagFilters)
-                        setNewTagName("")
-                        setTagError("")
-                      }}
+                      onClick={() => setShowTagFilters(!showTagFilters)}
                     >
-                      <Tag className="w-3 h-3" /> {/* Changed from w-3.5 h-3.5 to w-3 h-3 */}
+                      <Tag className="w-3.5 h-3.5" />
                       <span>Tags</span>
                       {selectedTags.length > 0 && (
-                        <span className="bg-teal-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
-                          {" "}
-                          {/* Changed from w-5 h-5 to w-4 h-4 */}
+                        <span className="bg-teal-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                           {selectedTags.length}
                         </span>
                       )}
@@ -850,11 +894,36 @@ justify-center"
           </AnimatePresence>
         </motion.div>
 
-        <div className="px-4 pt-4 pb-0">
+        <div className={cn("p-4", !headerVisible && "pt-6")}>
           <div>
-            <CollapsibleSection id="all-collection" title="All Collection" count={filteredCollection.length}>
+            <CollapsibleSection id="airing-now" title="Airing Now" count={getAiringNowItems().length}>
+              {getAiringNowItems().length > 0 ? (
+                <MediaGrid
+                  items={getAiringNowItems()}
+                  renderItem={renderMediaCard}
+                  emptyContent={
+                    <div className="text-center py-6 text-zinc-500">No shows currently airing in your collection</div>
+                  }
+                  gridClass="grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6" // Increased gap to gap-4 and sm:gap-6
+                />
+              ) : (
+                <div className="text-center py-6 text-zinc-500">No shows currently airing in your collection</div>
+              )}
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              id="all-collection"
+              title="All Collection"
+              count={
+                filteredCollection.filter(
+                  (item) => !getAiringNowItems().some((airingItem) => airingItem.id === item.id),
+                ).length
+              }
+            >
               <VirtualizedMediaGrid
-                items={filteredCollection}
+                items={filteredCollection.filter(
+                  (item) => !getAiringNowItems().some((airingItem) => airingItem.id === item.id),
+                )}
                 renderItem={renderMediaCard}
                 emptyContent={
                   <div className="text-center py-20 text-zinc-400">
@@ -945,7 +1014,7 @@ justify-center"
               exit={{ opacity: 0 }}
             >
               <motion.div
-                className="bg-zinc-900 rounded-2xl p-6 w-full max-w-md max-h-[80vh] overflow-y-auto"
+                className="bg-zinc-900 rounded-2xl p-6 w-full max-w-md max-h-[80vh] overflow-y-auto no-scrollbar"
                 initial={{ scale: 0.9, y: 20 }}
                 animate={{ scale: 1, y: 0 }}
                 exit={{ scale: 0.9, y: 20 }}
@@ -967,7 +1036,7 @@ justify-center"
                       Paste titles below, one per line. We'll search for each title and add matches to your collection.
                     </p>
                     <textarea
-                      className="w-full h-40 bg-zinc-800 border border-zinc-700 rounded-lg p-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
+                      className="w-full h-40 bg-zinc-800 border border-zinc-700 rounded-lg p-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4 no-scrollbar"
                       placeholder="Dune: Part Two&#10;House of the Dragon&#10;The Three-Body Problem&#10;..."
                       value={bulkImportText}
                       onChange={(e) => setBulkImportText(e.target.value)}
@@ -1004,7 +1073,7 @@ justify-center"
                     <p className="text-sm text-zinc-400 mb-2">
                       Found {bulkSearchResults.length} titles. Select the ones you want to add:
                     </p>
-                    <div className="mb-4 max-h-[50vh] overflow-y-auto">
+                    <div className="mb-4 max-h-[50vh] overflow-y-auto no-scrollbar">
                       {bulkSearchResults.map((item) => (
                         <div
                           key={item.id}
@@ -1094,7 +1163,7 @@ justify-center"
               exit={{ opacity: 0 }}
             >
               <motion.div
-                className="bg-zinc-900 rounded-2xl p-6 w-full max-w-md max-h-[80vh] overflow-y-auto"
+                className="bg-zinc-900 rounded-2xl p-6 w-full max-w-md max-h-[80vh] overflow-y-auto no-scrollbar"
                 initial={{ scale: 0.9, y: 20 }}
                 animate={{ scale: 1, y: 0 }}
                 exit={{ scale: 0.9, y: 20 }}
@@ -1180,47 +1249,6 @@ justify-center"
                       </motion.button>
                     )
                   })}
-
-                  {/* Add new tag creation section */}
-                  <div className="mt-4 border-t border-zinc-700 pt-4">
-                    <h3 className="text-sm font-medium mb-2">Create New Tag</h3>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-purple-500"
-                        placeholder="Enter new tag name"
-                        value={newTagName || ""}
-                        onChange={(e) => setNewTagName(e.target.value)}
-                        maxLength={40}
-                      />
-                      <motion.button
-                        className="px-3 py-2 rounded-lg bg-purple-600 text-white flex items-center"
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => {
-                          if (newTagName?.trim()) {
-                            const tagId = createTag(newTagName.trim())
-                            if (tagId) {
-                              selectedItems.forEach((id) => addTagToItem(id, tagId))
-                              setNewTagName("")
-                              setShowTagSelectionModal(false)
-                              setIsSelectionMode(false)
-                              setSelectedItems([])
-                            } else {
-                              setTagError(
-                                "A tag with this name already exists or you have reached the maximum number of custom tags",
-                              )
-                            }
-                          }
-                        }}
-                        disabled={!newTagName?.trim()}
-                      >
-                        <Plus className="w-4 h-4 mr-1" />
-                        Create
-                      </motion.button>
-                    </div>
-                    {tagError && <p className="text-xs text-red-400 mt-1">{tagError}</p>}
-                  </div>
                 </div>
                 <div className="flex justify-end">
                   <motion.button

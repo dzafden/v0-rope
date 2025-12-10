@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { motion } from "framer-motion"
+import { motion, useMotionValue, animate } from "framer-motion"
 import { ArrowRight } from "lucide-react"
 import OnboardingGame from "./onboarding-game"
 import { MediaProvider } from "@/context/media-context" // Import MediaProvider
@@ -20,23 +20,18 @@ const BORDER_EFFECTS = [
 
 export default function SplashScreen({ onComplete }: { onComplete: () => void }) {
   const [showOnboarding, setShowOnboarding] = useState(false)
-  const [scrollPosition, setScrollPosition] = useState(0)
+  const scrollY = useMotionValue(0)
 
   // Auto-scroll effect
   useEffect(() => {
-    // Only set up the interval if the component is mounted
-    let mounted = true
-    const interval = setInterval(() => {
-      if (mounted) {
-        setScrollPosition((prev) => (prev + 1) % 200) // Loop every 200px
-      }
-    }, 16) // ~60fps
+    const controls = animate(scrollY, [0, 200], {
+      duration: 3.2,
+      repeat: Number.POSITIVE_INFINITY,
+      ease: "linear",
+    })
 
-    return () => {
-      mounted = false
-      clearInterval(interval)
-    }
-  }, [])
+    return () => controls.stop()
+  }, [scrollY])
 
   // Handle completion of splash screen
   const handleBegin = () => {
@@ -70,7 +65,7 @@ export default function SplashScreen({ onComplete }: { onComplete: () => void })
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black overflow-hidden">
       {/* Scrolling card grid that fills the entire screen */}
       <div className="absolute inset-0 w-full h-full z-0">
-        <motion.div className="absolute inset-0" style={{ y: -scrollPosition }}>
+        <motion.div className="absolute inset-0" style={{ y: scrollY }}>
           <div className="grid grid-cols-4 gap-3 p-4">
             {Array.from({ length: 60 }).map((_, index) => {
               // Randomly assign border effects to some cards
