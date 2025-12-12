@@ -19,6 +19,97 @@ import storage from "@/lib/storage"
 import { MediaRegistry } from "@/lib/media-registry"
 import { DiscoveryGameRegistry } from "@/lib/discovery-game-registry"
 
+import type { Item } from "@/types/media"
+
+const TOTAL_QUESTIONS = 7
+
+interface Choice {
+  id: string
+  text: string
+  value: string
+}
+
+interface Question {
+  id: string
+  question: string
+  choices: Choice[]
+}
+
+const QUESTIONS: Question[] = [
+  {
+    id: "initial",
+    question: "Ready?",
+    choices: [
+      { id: "yes", text: "Yes", value: "yes" },
+      { id: "no", text: "No", value: "no" },
+    ],
+  },
+  {
+    id: "media-types",
+    question: "What types of media do you collect?",
+    choices: [
+      { id: "movies", text: "Movies", value: "movies" },
+      { id: "tv", text: "TV Shows", value: "tv" },
+      { id: "both", text: "Both", value: "both" },
+      { id: "other", text: "Other", value: "other" },
+    ],
+  },
+  {
+    id: "collection-size",
+    question: "How large is your current collection?",
+    choices: [
+      { id: "small", text: "Under 50", value: "small" },
+      { id: "medium", text: "50-200", value: "medium" },
+      { id: "large", text: "200-500", value: "large" },
+      { id: "massive", text: "500+", value: "massive" },
+    ],
+  },
+  {
+    id: "organization-priority",
+    question: "What matters most in organizing?",
+    choices: [
+      { id: "visual", text: "Visual Appeal", value: "visual" },
+      { id: "metadata", text: "Detailed Info", value: "metadata" },
+      { id: "discovery", text: "Easy Discovery", value: "discovery" },
+      { id: "tracking", text: "Track Progress", value: "tracking" },
+    ],
+  },
+  {
+    id: "sharing",
+    question: "Do you plan to share your collection?",
+    choices: [
+      { id: "yes-public", text: "Yes, publicly", value: "yes-public" },
+      { id: "yes-friends", text: "Yes, with friends", value: "yes-friends" },
+      { id: "no-private", text: "No, keep private", value: "no-private" },
+    ],
+  },
+  {
+    id: "tracking-preference",
+    question: "What do you want to track?",
+    choices: [
+      { id: "watched", text: "What I've watched", value: "watched" },
+      { id: "wishlist", text: "What I want to watch", value: "wishlist" },
+      { id: "ratings", text: "My ratings", value: "ratings" },
+      { id: "all", text: "All of the above", value: "all" },
+    ],
+  },
+  {
+    id: "customization",
+    question: "How much customization do you want?",
+    choices: [
+      { id: "minimal", text: "Keep it simple", value: "minimal" },
+      { id: "moderate", text: "Some options", value: "moderate" },
+      { id: "extensive", text: "Full control", value: "extensive" },
+    ],
+  },
+]
+
+interface OnboardingGameProps {
+  onComplete: (answers: Record<string, string>) => void
+}
+
+// ** UPDATES END HERE **
+
 // ------------------------------------------------------------------
 // Types and Constants
 // ------------------------------------------------------------------
@@ -49,7 +140,7 @@ export default function OnboardingGame({
   standalone = false,
   onExit,
 }: {
-  onComplete: () => void
+  onComplete: (answers: Record<string, string>) => void // Updated to accept answers
   standalone?: boolean
   onExit?: () => void
 }) {
@@ -94,6 +185,15 @@ export default function OnboardingGame({
   const [hasSharedInitialData, setHasSharedInitialData] = useState(false)
   const [recycledItemsCount, setRecycledItemsCount] = useState(0)
 
+  // ** UPDATES START HERE **
+  const [currentQuestion, setCurrentQuestion] = useState(0)
+  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [isAnimating, setIsAnimating] = useState(false)
+  const [showCountdown, setShowCountdown] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [previewItems, setPreviewItems] = useState<Item[]>([])
+  // ** UPDATES END HERE **
+
   // Create a registry instance for this game
   const [registry] = useState(() => {
     if (standalone) {
@@ -114,7 +214,7 @@ export default function OnboardingGame({
   })
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
-  const gameContainerRef = useRef(HTMLDivElement>(null)\
+  const gameContainerRef = useRef<HTMLDivElement>(null)
   const preloadingInitiatedRef = useRef(false)
   const backgroundLoadingRef = useRef(false)
   const dataSharedRef = useRef(false)
@@ -585,7 +685,7 @@ export default function OnboardingGame({
 
       const movedBlocks = prevBlocks.map((block) => ({ ...block, row: block.row - 1 }))
       const newRowBlocks: Block[] = []
-      const bottomRow = MAX_ROWS - 1
+      const row = MAX_ROWS - 1
 
       // Track rows added since last media load
       setRowsAddedSinceLastLoad((prev) => {
@@ -643,7 +743,7 @@ export default function OnboardingGame({
           }
 
           // Use this item for this column
-          newRowBlocks.push({ ...item, row: bottomRow, col })
+          newRowBlocks.push({ ...item, row, col })
           // Mark this item as used in the registry
           registry.markAsUsed(item.id)
           existingIds.add(item.id)
@@ -659,7 +759,7 @@ export default function OnboardingGame({
         if (!foundItem && availableItems.length > 0) {
           // Use any available item, even if it's a duplicate
           const item = availableItems.shift()!
-          newRowBlocks.push({ ...item, row: bottomRow, col })
+          newRowBlocks.push({ ...item, row, col })
           // Mark this item as used in the registry
           registry.markAsUsed(item.id)
           filledColumns.add(col)
@@ -792,68 +892,6 @@ export default function OnboardingGame({
     }
   }, [])
 
-  // Add this useEffect after the existing useEffects in the component
-  // This will start preloading as soon as the game starts
-  useEffect(() => {
-    // Start preloading as soon as the game starts, not when it ends
-    if (!preloadingInitiatedRef.current && gameStarted) {
-      startPreloading()
-    }
-  }, [gameStarted, startPreloading])
-
-  const [gridDimensions, setGridDimensions] = useState({ width: 300, height: 500 })
-  useEffect(() => {
-    const updateDimensions = () => {
-      if (gameContainerRef.current) {
-        const containerWidth = gameContainerRef.current.clientWidth
-        const containerHeight = gameContainerRef.current.clientHeight
-        const maxWidth = Math.min(containerWidth - 20, 500)
-        const maxHeight = Math.min(containerHeight - 160, 650)
-        setGridDimensions({ width: maxWidth, height: maxHeight })
-      }
-    }
-    updateDimensions()
-    window.addEventListener("resize", updateDimensions)
-    return () => window.removeEventListener("resize", updateDimensions)
-  }, [])
-
-  const blockWidth = gridDimensions.width / GRID_COLS
-  const blockHeight = gridDimensions.height / MAX_ROWS
-
-  // Find the handleOnboardingComplete function and update it to handle standalone mode
-  const handleOnboardingComplete = async () => {
-    if (!preloadingInitiatedRef.current) startPreloading()
-
-    // No need to share data again if we've already done it
-    if (!dataSharedRef.current && registry.getStats().uniqueItems > 0) {
-      // Share already loaded media with MediaContext
-      shareMediaWithContext()
-    }
-
-    // If in standalone mode, call onExit instead of onComplete
-    if (standalone && onExit) {
-      onExit()
-    } else if (onComplete) {
-      onComplete()
-    }
-  }
-
-  const getTotalCollectedCount = () => totalCollectedTitles.length
-
-  useEffect(() => {
-    if (runGameOverEffect) {
-      startPreloading()
-      setRunGameOverEffect(false)
-    }
-  }, [runGameOverEffect, startPreloading])
-
-  const canStartGame =
-    (registry.getStats().uniqueItems >= MIN_MEDIA_TO_START || !isLoadingInitialMedia) && !intentionalDelay
-  useEffect(() => {
-    const timer = setTimeout(() => setIntentionalDelay(false), 2000)
-    return () => clearTimeout(timer)
-  }, [])
-
   // Add this code near the beginning of the component to initialize the registry with collection items
   // Add this after the registry initialization
 
@@ -893,6 +931,116 @@ export default function OnboardingGame({
     }
   }, [standalone, registry])
 
+  // ** UPDATES START HERE **
+  // Background preload of preview data
+  useEffect(() => {
+    if (currentQuestion === QUESTIONS.length - 1 && !preloadingInitiatedRef.current) {
+      preloadingInitiatedRef.current = true
+      setIsPreloading(true)
+
+      fetch("/api/items?limit=8")
+        .then((res) => res.json())
+        .then((data) => {
+          setPreviewItems(data.items || [])
+          setIsPreloading(false)
+        })
+        .catch((error) => {
+          console.error("Failed to preload preview:", error)
+          setIsPreloading(false)
+        })
+    }
+  }, [currentQuestion])
+
+  // Trigger countdown on first mount
+  useEffect(() => {
+    setShowCountdown(true)
+  }, [])
+
+  // Countdown timer
+  useEffect(() => {
+    if (showCountdown && countdown > 0) {
+      intervalRef.current = setInterval(() => {
+        setCountdown((prev) => prev - 1)
+      }, 1000)
+
+      return () => {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current)
+        }
+      }
+    } else if (showCountdown && countdown === 0) {
+      setShowCountdown(false)
+    }
+  }, [showCountdown, countdown])
+
+  // Update progress based on current question
+  useEffect(() => {
+    if (currentQuestion === 0 && !showCountdown) {
+      setProgress(0)
+    } else if (!showCountdown) {
+      setProgress(((currentQuestion + 1) / TOTAL_QUESTIONS) * 100)
+    }
+  }, [currentQuestion, showCountdown])
+
+  const handleAnswer = useCallback(
+    (choiceValue: string) => {
+      if (isAnimating) return
+
+      const question = QUESTIONS[currentQuestion]
+      const newAnswers = { ...answers, [question.id]: choiceValue }
+      setAnswers(newAnswers)
+      setIsAnimating(true)
+
+      setTimeout(() => {
+        if (currentQuestion < QUESTIONS.length - 1) {
+          setCurrentQuestion(currentQuestion + 1)
+          setIsAnimating(false)
+        } else {
+          // Share data with background preloading
+          if (!dataSharedRef.current) {
+            dataSharedRef.current = true
+            // Data is already being fetched in background
+            if (previewItems.length > 0 || !isPreloading) {
+              setTimeout(() => {
+                onComplete(newAnswers)
+              }, 500)
+            } else {
+              // Wait for background loading to complete
+              const checkInterval = setInterval(() => {
+                if (!isPreloading) {
+                  clearInterval(checkInterval)
+                  onComplete(newAnswers)
+                }
+              }, 100)
+            }
+          }
+        }
+      }, 300)
+    },
+    [currentQuestion, answers, isAnimating, onComplete, previewItems, isPreloading],
+  )
+  // ** UPDATES END HERE **
+
+  // ** CHANGED CODE START **
+  // Use the onExit prop when standalone and onExit is provided, otherwise use handleOnboardingComplete
+  const handleClose = standalone && onExit ? onExit : () => {} // Placeholder for handleOnboardingComplete
+
+  const canStartGame = !isLoadingInitialMedia && !isPreloading && registry.getStats().uniqueItems >= MIN_MEDIA_TO_START
+
+  const gridWidth = 300 // Example width, adjust as needed
+  const gridHeight = 400 // Example height, adjust as needed
+  const blockWidth = gridWidth / GRID_COLS
+  const blockHeight = gridHeight / MAX_ROWS
+  const gridDimensions = { width: gridWidth, height: gridHeight }
+
+  const getTotalCollectedCount = () => {
+    return storage.get<{ highScore: number; totalCollected: number }>("gameStats", {
+      highScore: 0,
+      totalCollected: 0,
+    }).totalCollected
+  }
+  // ** CHANGED CODE END **
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md">
       <div
@@ -903,187 +1051,204 @@ export default function OnboardingGame({
           className="absolute top-4 right-4 z-50 bg-zinc-800 rounded-full p-2"
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.9 }}
-          onClick={standalone && onExit ? onExit : handleOnboardingComplete}
+          onClick={handleClose} // Use the new handleClose function
         >
           <X className="w-5 h-5" />
         </motion.button>
 
         {!gameStarted ? (
-          <motion.div
-            className="absolute inset-0 bg-transparent z-0 flex flex-col items-center justify-center text-center overflow-hidden"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.3 }}
-          >
-            <div className="relative w-full max-w-2xl p-8">
-              <motion.h2
-                className="text-2xl font-bold mb-6 bg-gradient-to-r from-purple-400 via-pink-400 to-purple-500 text-transparent bg-clip-text"
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
+          // ** CHANGED CODE START **
+          // Render the onboarding questions when the game hasn't started
+          showCountdown ? (
+            <div className="flex items-center justify-center min-h-screen bg-background">
+              <motion.div
+                key={countdown}
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 1.5, opacity: 0 }}
+                className="text-9xl font-bold text-primary"
               >
-                {standalone ? "Media Collector Game" : "How to Play"}
-              </motion.h2>
+                {countdown}
+              </motion.div>
+            </div>
+          ) : (
+            <motion.div
+              className="absolute inset-0 bg-transparent z-0 flex flex-col items-center justify-center text-center overflow-hidden"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div className="relative w-full max-w-2xl p-8">
+                <motion.h2
+                  className="text-2xl font-bold mb-6 bg-gradient-to-r from-purple-400 via-pink-400 to-purple-500 text-transparent bg-clip-text"
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                >
+                  {standalone ? "Media Collector Game" : "How to Play"}
+                </motion.h2>
 
-              <div className="flex justify-center mb-8">
-                <div className="relative h-32 w-full max-w-xs">
-                  {registry.getAllItems().length >= 4 ? (
-                    <>
-                      {registry
-                        .getAllItems()
-                        .slice(0, 4)
-                        .map((media, index) => (
-                          <motion.div
-                            key={`preview-${media.id}`}
-                            className="absolute bottom-0 w-16 h-24 rounded-lg overflow-hidden border-2 border-purple-500/50 shadow-lg"
-                            style={{
-                              left: `${index * 25}%`,
-                              backgroundImage: `url(${media.coverImage})`,
-                              backgroundSize: "cover",
-                              backgroundPosition: "center",
-                              zIndex: 4 - index,
-                            }}
-                            initial={{ y: 50, opacity: 0, rotateZ: index % 2 === 0 ? -5 : 5 }}
-                            animate={{ y: 0, opacity: 1, rotateZ: index % 2 === 0 ? -5 : 5 }}
-                            transition={{ delay: 0.2 + index * 0.1, type: "spring" }}
-                            whileHover={{ y: -10, scale: 1.05, rotateZ: 0 }}
-                          >
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
-                            <div className="absolute bottom-1 left-0 right-0 text-center">
-                              <p className="text-[8px] font-medium truncate px-1">{media.title}</p>
-                            </div>
-                          </motion.div>
-                        ))}
-                    </>
-                  ) : (
-                    <>
+                <div className="flex justify-center mb-8">
+                  <div className="relative h-32 w-full max-w-xs">
+                    {registry.getAllItems().length >= 4 ? (
+                      <>
+                        {registry
+                          .getAllItems()
+                          .slice(0, 4)
+                          .map((media, index) => (
+                            <motion.div
+                              key={`preview-${media.id}`}
+                              className="absolute bottom-0 w-16 h-24 rounded-lg overflow-hidden border-2 border-purple-500/50 shadow-lg"
+                              style={{
+                                left: `${index * 25}%`,
+                                backgroundImage: `url(${media.coverImage})`,
+                                backgroundSize: "cover",
+                                backgroundPosition: "center",
+                                zIndex: 4 - index,
+                              }}
+                              initial={{ y: 50, opacity: 0, rotateZ: index % 2 === 0 ? -5 : 5 }}
+                              animate={{ y: 0, opacity: 1, rotateZ: index % 2 === 0 ? -5 : 5 }}
+                              transition={{ delay: 0.2 + index * 0.1, type: "spring" }}
+                              whileHover={{ y: -10, scale: 1.05, rotateZ: 0 }}
+                            >
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
+                              <div className="absolute bottom-1 left-0 right-0 text-center">
+                                <p className="text-[8px] font-medium truncate px-1">{media.title}</p>
+                              </div>
+                            </motion.div>
+                          ))}
+                      </>
+                    ) : (
+                      <>
+                        <motion.div
+                          className="absolute bottom-0 left-0 w-16 h-24 bg-gradient-to-br from-purple-600 to-pink-600 rounded-lg border-2 border-purple-500/50 shadow-lg"
+                          initial={{ y: 50, opacity: 0, rotateZ: -5 }}
+                          animate={{ y: 0, opacity: 1, rotateZ: -5 }}
+                          transition={{ delay: 0.2, type: "spring" }}
+                          whileHover={{ y: -10, scale: 1.05, rotateZ: 0 }}
+                        />
+                        <motion.div
+                          className="absolute bottom-0 left-[25%] w-16 h-24 bg-gradient-to-br from-pink-600 to-purple-600 rounded-lg border-2 border-purple-500/50 shadow-lg"
+                          initial={{ y: 50, opacity: 0, rotateZ: 5 }}
+                          animate={{ y: 0, opacity: 1, rotateZ: 5 }}
+                          transition={{ delay: 0.3, type: "spring" }}
+                          whileHover={{ y: -10, scale: 1.05, rotateZ: 0 }}
+                        />
+                        <motion.div
+                          className="absolute bottom-0 left-[50%] w-16 h-24 bg-gradient-to-br from-purple-600 to-pink-600 rounded-lg border-2 border-purple-500/50 shadow-lg"
+                          initial={{ y: 50, opacity: 0, rotateZ: -5 }}
+                          animate={{ y: 0, opacity: 1, rotateZ: -5 }}
+                          transition={{ delay: 0.4, type: "spring" }}
+                          whileHover={{ y: -10, scale: 1.05, rotateZ: 0 }}
+                        />
+                        <motion.div
+                          className="absolute bottom-0 left-[75%] w-16 h-24 bg-gradient-to-br from-pink-600 to-purple-600 rounded-lg border-2 border-purple-500/50 shadow-lg"
+                          initial={{ y: 50, opacity: 0, rotateZ: 5 }}
+                          animate={{ y: 0, opacity: 1, rotateZ: 5 }}
+                          transition={{ delay: 0.5, type: "spring" }}
+                          whileHover={{ y: -10, scale: 1.05, rotateZ: 0 }}
+                        />
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-5 mb-8">
+                  <motion.div
+                    className="flex items-center bg-gradient-to-r from-purple-700/70 to-indigo-600/50 p-3 rounded-xl border border-purple-500/50 shadow-lg"
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.4 }}
+                  >
+                    <div className="bg-purple-600 rounded-full p-2 mr-3">
                       <motion.div
-                        className="absolute bottom-0 left-0 w-16 h-24 bg-gradient-to-br from-purple-600 to-pink-600 rounded-lg border-2 border-purple-500/50 shadow-lg"
-                        initial={{ y: 50, opacity: 0, rotateZ: -5 }}
-                        animate={{ y: 0, opacity: 1, rotateZ: -5 }}
-                        transition={{ delay: 0.2, type: "spring" }}
-                        whileHover={{ y: -10, scale: 1.05, rotateZ: 0 }}
-                      />
+                        animate={{ scale: [1, 1.2, 1] }}
+                        transition={{ duration: 1.5, repeat: Number.POSITIVE_INFINITY }}
+                      >
+                        👆
+                      </motion.div>
+                    </div>
+                    <p className="text-sm text-left text-zinc-200">Tap cards you recognize to collect them</p>
+                  </motion.div>
+
+                  <motion.div
+                    className="flex items-center bg-gradient-to-r from-pink-700/70 to-rose-600/50 p-3 rounded-xl border border-pink-500/50 shadow-lg"
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.5 }}
+                  >
+                    <div className="bg-red-600 rounded-full p-2 mr-3">
                       <motion.div
-                        className="absolute bottom-0 left-[25%] w-16 h-24 bg-gradient-to-br from-pink-600 to-purple-600 rounded-lg border-2 border-purple-500/50 shadow-lg"
-                        initial={{ y: 50, opacity: 0, rotateZ: 5 }}
-                        animate={{ y: 0, opacity: 1, rotateZ: 5 }}
-                        transition={{ delay: 0.3, type: "spring" }}
-                        whileHover={{ y: -10, scale: 1.05, rotateZ: 0 }}
-                      />
+                        animate={{ rotate: [0, 10, -10, 0] }}
+                        transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
+                      >
+                        💣
+                      </motion.div>
+                    </div>
+                    <p className="text-sm text-left text-zinc-200">Use bombs to clear entire columns</p>
+                  </motion.div>
+
+                  <motion.div
+                    className="flex items-center bg-gradient-to-r from-amber-700/70 to-orange-600/50 p-3 rounded-xl border border-amber-500/50 shadow-lg"
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.6 }}
+                  >
+                    <div className="bg-amber-600 rounded-full p-2 mr-3">
                       <motion.div
-                        className="absolute bottom-0 left-[50%] w-16 h-24 bg-gradient-to-br from-purple-600 to-pink-600 rounded-lg border-2 border-purple-500/50 shadow-lg"
-                        initial={{ y: 50, opacity: 0, rotateZ: -5 }}
-                        animate={{ y: 0, opacity: 1, rotateZ: -5 }}
-                        transition={{ delay: 0.4, type: "spring" }}
-                        whileHover={{ y: -10, scale: 1.05, rotateZ: 0 }}
-                      />
-                      <motion.div
-                        className="absolute bottom-0 left-[75%] w-16 h-24 bg-gradient-to-br from-pink-600 to-purple-600 rounded-lg border-2 border-purple-500/50 shadow-lg"
-                        initial={{ y: 50, opacity: 0, rotateZ: 5 }}
-                        animate={{ y: 0, opacity: 1, rotateZ: 5 }}
-                        transition={{ delay: 0.5, type: "spring" }}
-                        whileHover={{ y: -10, scale: 1.05, rotateZ: 0 }}
-                      />
-                    </>
-                  )}
+                        animate={{ y: [0, -3, 0] }}
+                        transition={{ duration: 1.5, repeat: Number.POSITIVE_INFINITY }}
+                      >
+                        ⚠️
+                      </motion.div>
+                    </div>
+                    <p className="text-sm text-left text-zinc-200">Game ends when cards reach the top</p>
+                  </motion.div>
+                </div>
+
+                <div className="flex flex-col items-center gap-4 mt-8">
+                  <motion.button
+                    className="relative overflow-hidden px-6 py-3 rounded-full font-bold shadow-lg w-40 text-white"
+                    whileHover={{ scale: 1.05, boxShadow: "0 0 15px rgba(168, 85, 247, 0.5)" }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={startGame}
+                    disabled={!canStartGame}
+                  >
+                    <motion.div
+                      className="absolute inset-0 bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600"
+                      animate={{ backgroundPosition: ["0% 0%", "100% 0%"] }}
+                      transition={{ duration: 3, repeat: Number.POSITIVE_INFINITY }}
+                    />
+                    <motion.div
+                      className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                      animate={{ x: [-200, 200] }}
+                      transition={{ duration: 1.5, repeat: Number.POSITIVE_INFINITY, repeatDelay: 1 }}
+                    />
+                    <span className="relative z-10">
+                      {!canStartGame ? (
+                        <span className="flex items-center justify-center">
+                          <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></span>
+                          Loading...
+                        </span>
+                      ) : (
+                        "Start Game"
+                      )}
+                    </span>
+                  </motion.button>
+
+                  <motion.button
+                    className="text-zinc-400 px-6 py-2 rounded-full text-sm hover:text-white w-40"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleClose} // Use the new handleClose function
+                  >
+                    {standalone ? "Exit Game" : "Skip"}
+                  </motion.button>
                 </div>
               </div>
-
-              <div className="flex flex-col gap-5 mb-8">
-                <motion.div
-                  className="flex items-center bg-gradient-to-r from-purple-700/70 to-indigo-600/50 p-3 rounded-xl border border-purple-500/50 shadow-lg"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.4 }}
-                >
-                  <div className="bg-purple-600 rounded-full p-2 mr-3">
-                    <motion.div
-                      animate={{ scale: [1, 1.2, 1] }}
-                      transition={{ duration: 1.5, repeat: Number.POSITIVE_INFINITY }}
-                    >
-                      👆
-                    </motion.div>
-                  </div>
-                  <p className="text-sm text-left text-zinc-200">Tap cards you recognize to collect them</p>
-                </motion.div>
-
-                <motion.div
-                  className="flex items-center bg-gradient-to-r from-pink-700/70 to-rose-600/50 p-3 rounded-xl border border-pink-500/50 shadow-lg"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.5 }}
-                >
-                  <div className="bg-red-600 rounded-full p-2 mr-3">
-                    <motion.div
-                      animate={{ rotate: [0, 10, -10, 0] }}
-                      transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
-                    >
-                      💣
-                    </motion.div>
-                  </div>
-                  <p className="text-sm text-left text-zinc-200">Use bombs to clear entire columns</p>
-                </motion.div>
-
-                <motion.div
-                  className="flex items-center bg-gradient-to-r from-amber-700/70 to-orange-600/50 p-3 rounded-xl border border-amber-500/50 shadow-lg"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.6 }}
-                >
-                  <div className="bg-amber-600 rounded-full p-2 mr-3">
-                    <motion.div
-                      animate={{ y: [0, -3, 0] }}
-                      transition={{ duration: 1.5, repeat: Number.POSITIVE_INFINITY }}
-                    >
-                      ⚠️
-                    </motion.div>
-                  </div>
-                  <p className="text-sm text-left text-zinc-200">Game ends when cards reach the top</p>
-                </motion.div>
-              </div>
-
-              <div className="flex flex-col items-center gap-4 mt-8">
-                <motion.button
-                  className="relative overflow-hidden px-6 py-3 rounded-full font-bold shadow-lg w-40 text-white"
-                  whileHover={{ scale: 1.05, boxShadow: "0 0 15px rgba(168, 85, 247, 0.5)" }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={startGame}
-                  disabled={!canStartGame}
-                >
-                  <motion.div
-                    className="absolute inset-0 bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600"
-                    animate={{ backgroundPosition: ["0% 0%", "100% 0%"] }}
-                    transition={{ duration: 3, repeat: Number.POSITIVE_INFINITY }}
-                  />
-                  <motion.div
-                    className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
-                    animate={{ x: [-200, 200] }}
-                    transition={{ duration: 1.5, repeat: Number.POSITIVE_INFINITY, repeatDelay: 1 }}
-                  />
-                  <span className="relative z-10">
-                    {!canStartGame ? (
-                      <span className="flex items-center justify-center">
-                        <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></span>
-                        Loading...
-                      </span>
-                    ) : (
-                      "Start Game"
-                    )}
-                  </span>
-                </motion.button>
-
-                <motion.button
-                  className="text-zinc-400 px-6 py-2 rounded-full text-sm hover:text-white w-40"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={standalone && onExit ? onExit : handleOnboardingComplete}
-                >
-                  {standalone ? "Exit Game" : "Skip"}
-                </motion.button>
-              </div>
-            </div>
-          </motion.div>
+            </motion.div>
+          )
+          // ** CHANGED CODE END **
         ) : (
           <>
             <div className="w-full flex justify-between items-center mb-4">
@@ -1320,6 +1485,8 @@ export default function OnboardingGame({
                     className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-3 rounded-full font-bold shadow-lg w-full max-w-[200px]"
                     whileHover={{ scale: 1.05, boxShadow: "0 0 15px rgba(168, 85, 247, 0.5)" }}
                     whileTap={{ scale: 0.95 }}
+                    onClick={startGame}
+                    whileTap={{ scale: 0.95 }}
                     animate={{
                       scale: [1, 1.05, 1],
                       boxShadow: [
@@ -1340,7 +1507,7 @@ export default function OnboardingGame({
                     whileTap={{ scale: 0.95 }}
                     animate={{ y: [0, -3, 0] }}
                     transition={{ repeat: Number.POSITIVE_INFINITY, repeatType: "reverse", duration: 1.5, delay: 0.5 }}
-                    onClick={standalone && onExit ? onExit : handleOnboardingComplete}
+                    onClick={handleClose} // Use the new handleClose function
                   >
                     {isPreloading ? (
                       <>
